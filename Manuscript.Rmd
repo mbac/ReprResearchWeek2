@@ -1,0 +1,44 @@
+---
+title: "Storm Data Analysis - Week 4"
+author: "Marco Baciarello"
+date: "3/17/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache = TRUE, autodep = TRUE)
+
+suppressMessages(library(tidyverse))
+```
+
+## Abstract
+
+Blah blah
+
+## Introduction
+
+We analyze this, that and something else...
+
+## Methods
+
+The following code was used for analysis
+
+### Data preparation
+
+First, we download the data file and load it into an R object. We're using a `tidyr`-centric approach, leveraging on the full suite of library found in package `tidyverse`.
+
+```{r data-prep}
+
+# Check if data dir exists -> create one
+if (!file.exists("data")) {
+    dir.create("./data")
+}
+
+# Get the data
+if (!file.exists("data/stormdata.csv")) {
+    download.file("https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2", "data/stormdata.csv")
+}
+
+data <- read_csv("data/stormdata.csv")
+
+```
