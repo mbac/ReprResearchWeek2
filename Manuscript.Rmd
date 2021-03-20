@@ -9,6 +9,7 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE, cache = TRUE, autodep = TRUE)
 
 suppressMessages(library(tidyverse))
+# library(skimr)
 ```
 
 ## Abstract
@@ -27,7 +28,7 @@ The following code was used for analysis
 
 First, we download the data file and load it into an R object. We're using a `tidyr`-centric approach, leveraging on the full suite of library found in package `tidyverse`.
 
-```{r data-prep}
+```{r data-prep, message=FALSE, warning=FALSE, cache = TRUE}
 
 # Check if data dir exists -> create one
 if (!file.exists("data")) {
@@ -35,10 +36,98 @@ if (!file.exists("data")) {
 }
 
 # Get the data
-if (!file.exists("data/stormdata.csv")) {
-    download.file("https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2", "data/stormdata.csv")
+if (!file.exists("data/stormdata.csv.bz2")) {
+    download.file("https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2", "data/stormdata.csv.bz2")
 }
 
-data <- read_csv("data/stormdata.csv")
+# Read data in. fread seems way faster than other solutions.
+data <- data.table::fread("data/stormdata.csv.bz2", data.table = FALSE)
 
 ```
+
+We create 2 new table columns; one is a properly-formatted `POSIXct` column including date and time information from columns `BGN_DATE`and `BGN_TIME`. A second column will be created in order to reconstruct information on property damage: columns `PROPDMGEXP` specifies an "exponent" for `PROPDMG`, in the form of a mathematical suffix: K for thousands, M for millions, and so on... We will compute a column containing the actual amount as an integer or double. Same operation will be performed for `CROPDMG` and `CROPDMGEXP`.
+
+```{r column-formatting}
+
+# Formatted data
+fdata <- data %>%
+    mutate(
+        # Paste date and time For some reason, data includes a fixed time 00:00
+        # which we don't need, so we split and get the first fragment
+        temp_datetime = paste(strsplit(BGN_DATE, " ")[[1]][1], BGN_TIME),
+        # Convert to datetime; 
+        utc_datetime = strptime(
+            temp_datetime,
+            "%m/%d/%Y %H%M"),
+        # correct timezones (there are older/unsupported abbreviations)
+        c_timezone = recode(TIME_ZONE,
+                            CDT = "US/Central",
+                            CST = "US/Central",
+                            UNK = "UTC",
+                            MDT = "US/Mountain",
+                            AST = "US/Eastern",
+                            ADT = "US/Eastern",
+                            CSt = "US/Central",
+                            CSC = "UTC",
+                            SCT = "US/Central",
+                            ESY = "US/Eastern",
+                            SST = "US/Samoa",
+                            AKS = "US/Alaska",
+                            GST = "US/Central"
+                            ),
+        # # Convert each time to its own time zone
+        datetime = lubridate::force_tzs(utc_datetime, tzones = c_timezone)
+    )
+```
+
+`*EXP` values are actually multipliers for variables indicating damages. The full legend can be found [here](ane.st/HandleExponent6c0f3 "Legend for EXP values").
+
+```{r exponents}
+unique(data$PROPDMGEXP)
+unique(data$CROPDMGEXP)
+```
+
+We will transform them into the actual multiplier so we can compute actual damages. It is known that there are a few malformed values [*e.g.*: empty strings ("")]; they will be set to 0. According to the above analysis, malformed values are negligible both in numbers and absolute values.
+
+```{r exp-to-multipliers}
+fdata <- fdata %>%
+    mutate(
+        prop_mult = case_when(
+            PROPDMGEXP %in% c(0, 1, 2, 3, 4, 5, 6, 7, 8) ~ 10,
+            PROPDMGEXP %in% c('m', 'M') ~ 1000000,
+            PROPDMGEXP %in% c('k', 'K') ~ 1000,
+            PROPDMGEXP %in% c('b', 'B') ~ 1000000000,
+            PROPDMGEXP %in% c('h', 'H') ~ 100,
+            PROPDMGEXP == '+' ~ 1,
+            TRUE ~ 0
+        ),
+        crop_mult = case_when(
+            PROPDMGEXP %in% c(0, 1, 2, 3, 4, 5, 6, 7, 8) ~ 10,
+            CROPDMGEXP %in% c('m', 'M') ~ 1000000,
+            CROPDMGEXP %in% c('k', 'K') ~ 1000,
+            CROPDMGEXP %in% c('b', 'B') ~ 1000000000,
+            CROPDMGEXP %in% c('h', 'H') ~ 100,
+            CROPDMGEXP == '+' ~ 1,
+            TRUE ~ 0
+        ),
+        prop_dmg = PROPDMG * prop_mult,
+        crop_dmg = CROPDMG * crop_mult
+    )
+
+
+```
+
+We can get the number of invalid `EXP` values resulting in `0`-value multipliers using the following code:
+
+```{r invalid-exps}
+# Property damage
+inv_prop_exp <- filter(fdata, PROPDMG != 0, prop_mult == 0) %>%
+    select(PROPDMG, PROPDMGEXP, prop_mult, BGN_DATE) %>%
+    nrow()
+
+inv_crop_exp <- filter(fdata, CROPDMG != 0, crop_mult == 0) %>%
+    select(CROPDMG, CROPDMGEXP, crop_mult, BGN_DATE) %>%
+    nrow()
+```
+
+Using **inline code evaluation**, we can report `r inv_prop_exp` invalid property damage exponents, and `r inv_crop_exp` invalid crop damage exponents.

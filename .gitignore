@@ -30,3 +30,5 @@ vignettes/*.pdf
 data
 data/*
 ReprResearchWeek2.Rproj
+test.RData
+debug.RData
