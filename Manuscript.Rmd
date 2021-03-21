@@ -9,6 +9,8 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE, cache = TRUE, autodep = TRUE)
 
 suppressMessages(library(tidyverse))
+suppressMessages(library(dtplyr))
+suppressMessages(library(data.table))
 # library(skimr)
 ```
 
@@ -24,7 +26,7 @@ We analyze this, that and something else...
 
 The following code was used for analysis
 
-### Data preparation
+## Data preparation
 
 First, we download the data file and load it into an R object. We're using a `tidyr`-centric approach, leveraging on the full suite of library found in package `tidyverse`.
 
@@ -41,24 +43,31 @@ if (!file.exists("data/stormdata.csv.bz2")) {
 }
 
 # Read data in. fread seems way faster than other solutions.
-data <- data.table::fread("data/stormdata.csv.bz2", data.table = FALSE)
+rdata <- fread("data/stormdata.csv.bz2", data.table = FALSE)
+# Convert to "lazy data.table" which will accept dplyr functions
+data <- lazy_dt(rdata)
 
 ```
 
-We create 2 new table columns; one is a properly-formatted `POSIXct` column including date and time information from columns `BGN_DATE`and `BGN_TIME`. A second column will be created in order to reconstruct information on property damage: columns `PROPDMGEXP` specifies an "exponent" for `PROPDMG`, in the form of a mathematical suffix: K for thousands, M for millions, and so on... We will compute a column containing the actual amount as an integer or double. Same operation will be performed for `CROPDMG` and `CROPDMGEXP`.
+### Time formatting
+
+We create 2 new table columns; one is a properly-formatted `POSIXct` column including date and time information from columns `BGN_DATE` and `BGN_TIME`. We will ignore end times of phenomena for now.
 
 ```{r column-formatting}
 
-# Formatted data
+# TECH NOTE: We're using the `dtplyr` interface to use `tidyverse` grammar but
+# run data.table code, for increased performance on large tables.
+
+# Format data
 fdata <- data %>%
     mutate(
         # Paste date and time For some reason, data includes a fixed time 00:00
         # which we don't need, so we split and get the first fragment
         temp_datetime = paste(strsplit(BGN_DATE, " ")[[1]][1], BGN_TIME),
         # Convert to datetime; 
-        utc_datetime = strptime(
+        utc_datetime = as.POSIXct(
             temp_datetime,
-            "%m/%d/%Y %H%M"),
+            format = "%m/%d/%Y %H%M"),
         # correct timezones (there are older/unsupported abbreviations)
         c_timezone = recode(TIME_ZONE,
                             CDT = "US/Central",
@@ -76,9 +85,22 @@ fdata <- data %>%
                             GST = "US/Central"
                             ),
         # # Convert each time to its own time zone
-        datetime = lubridate::force_tzs(utc_datetime, tzones = c_timezone)
-    )
+        datetime = lubridate::force_tzs(utc_datetime, tzones = c_timezone),
+        # Force POSIXct format, otherwise data won't be usable in data.table
+        # package functions
+        begin_time = as.POSIXct(datetime)
+    ) %>%
+    # Need to drop non-POSIXlt columns for data.table compatibility
+    select(-contains("datetime")) %>%
+    # End dtplyr "session," translate into data.table code and run
+    as_tibble()
+
+
 ```
+
+### Property and agricultural damages
+
+A second column will be created in order to reconstruct information on property damage: columns `PROPDMGEXP` specifies an "exponent" for `PROPDMG`, in the form of a mathematical suffix: K for thousands, M for millions, and so on... We will compute a column containing the actual amount as an integer or double. Same operation will be performed for `CROPDMG` and `CROPDMGEXP`.
 
 `*EXP` values are actually multipliers for variables indicating damages. The full legend can be found [here](ane.st/HandleExponent6c0f3 "Legend for EXP values").
 
@@ -90,7 +112,10 @@ unique(data$CROPDMGEXP)
 We will transform them into the actual multiplier so we can compute actual damages. It is known that there are a few malformed values [*e.g.*: empty strings ("")]; they will be set to 0. According to the above analysis, malformed values are negligible both in numbers and absolute values.
 
 ```{r exp-to-multipliers}
-fdata <- fdata %>%
+
+# Cannot use dtplyr here because of error: Can't rename variables in this context.
+
+mdata <- fdata %>%
     mutate(
         prop_mult = case_when(
             PROPDMGEXP %in% c(0, 1, 2, 3, 4, 5, 6, 7, 8) ~ 10,
@@ -99,7 +124,9 @@ fdata <- fdata %>%
             PROPDMGEXP %in% c('b', 'B') ~ 1000000000,
             PROPDMGEXP %in% c('h', 'H') ~ 100,
             PROPDMGEXP == '+' ~ 1,
-            TRUE ~ 0
+            # Vector must be double because of limitations in `case_when`, so we
+            # can't set a value to NA; use dummy code and convert later.
+            TRUE ~ -999999
         ),
         crop_mult = case_when(
             PROPDMGEXP %in% c(0, 1, 2, 3, 4, 5, 6, 7, 8) ~ 10,
@@ -108,11 +135,16 @@ fdata <- fdata %>%
             CROPDMGEXP %in% c('b', 'B') ~ 1000000000,
             CROPDMGEXP %in% c('h', 'H') ~ 100,
             CROPDMGEXP == '+' ~ 1,
-            TRUE ~ 0
+            # Vector must be double because of limitations in `case_when`, so we
+            # can't set a value to NA; use dummy code and convert later.
+            TRUE ~ -999999
         ),
+        # Change dummy value into NA
+        across(ends_with("_mult"), ~na_if(., -999999)),
+        crop_dmg = CROPDMG * crop_mult,
         prop_dmg = PROPDMG * prop_mult,
-        crop_dmg = CROPDMG * crop_mult
-    )
+        tot_dmg = prop_dmg + crop_dmg
+    ) 
 
 
 ```
@@ -121,13 +153,66 @@ We can get the number of invalid `EXP` values resulting in `0`-value multipliers
 
 ```{r invalid-exps}
 # Property damage
-inv_prop_exp <- filter(fdata, PROPDMG != 0, prop_mult == 0) %>%
+inv_prop_exp <- filter(mdata, PROPDMG != 0, prop_mult == 0) %>%
     select(PROPDMG, PROPDMGEXP, prop_mult, BGN_DATE) %>%
     nrow()
 
-inv_crop_exp <- filter(fdata, CROPDMG != 0, crop_mult == 0) %>%
+inv_crop_exp <- filter(mdata, CROPDMG != 0, crop_mult == 0) %>%
     select(CROPDMG, CROPDMGEXP, crop_mult, BGN_DATE) %>%
     nrow()
 ```
 
-Using **inline code evaluation**, we can report `r inv_prop_exp` invalid property damage exponents, and `r inv_crop_exp` invalid crop damage exponents.
+Using **inline code evaluation**, we can report `r inv_prop_exp` invalid property damage exponents, and `r inv_crop_exp` invalid crop damage exponents. Data from these was set to NA in order to compute means *etc...*
+
+### Injuries and fatalities
+
+These data do not seem to be needing any significant adjustments:
+
+```{r inj-fat-describe}
+
+skimr::skim(fdata$INJURIES)
+cat("\n\n\n")
+skimr::skim(fdata$FATALITIES)
+
+```
+
+### Selection of variables of interest
+
+According to the requirements for this report, we will be describing associations between weather events and human and economical damages. After preparatory operations performed above, we will now drop variables which are not of interest to these analyses, in order to make data more easily readable and reduce resource requirements.
+
+```{r data-column-thinning}
+
+# Select useful columns
+lean_data <- mdata %>%
+    select(REFNUM, EVTYPE, begin_time, c_timezone,
+           FATALITIES, INJURIES, tot_dmg)
+# Economical damages aren't always available, so better have a tibble with all
+# complete cases
+dmg_data <- lean_data %>%
+    filter(!is.na(tot_dmg))
+
+```
+
+### Selection of events
+
+The vast majority of events have caused no damage to people or property. More than 90% of event *types* are not associated with damage, and many of them have occurred just once since 1950. This is mostly due to numerous, uncorrected mistakes made in data entry over the first ⅔ of the database's life.
+
+We will now plot the distribution of values of interests, so as to only select significant *event types* in terms of occurrence. We'll work with the 90^th^ percentile (and above) of event frequency.
+
+```{r evtype-selection}
+
+# Make a copy of data and cast as DT
+dt_data <- as.data.table(lean_data)
+
+sel_data <- dt_data[, .(count = .N,
+                        total_dmg = sum(tot_dmg, na.rm = TRUE),
+                        fatalities = sum(FATALITIES, na.rm = TRUE),
+                        injuries = sum(INJURIES, na.rm = TRUE)
+                        ),
+                    by = EVTYPE][
+                        order(-count, -total_dmg, -fatalities)]
+
+View(sel_data)
+
+```
+
