@@ -14,6 +14,45 @@ suppressMessages(library(data.table))
 # library(skimr)
 ```
 
+```{r function-definitions}
+
+# WARNING: operates by reference, modifies argument data.table Adds columns for
+# ranks based on event count, damage and injuries/fatalities. Useful to quickly
+# re-rank tables with different elements or filters based on year.
+rank_DT <- function(DT) {
+    DT[, .(
+            counter = .N, # Count elements in group
+            # Total monetary damages per group
+            total_dmg = sum(tot_dmg, na.rm = TRUE),
+            # Total fatalities
+            fatalities = sum(FATALITIES, na.rm = TRUE),
+            # Injuries
+            injuries = sum(INJURIES, na.rm = TRUE)
+            ),
+        # Grouping by event type
+        by = event][
+            ,
+            # Compute a "percent rank": rank events by number of
+            # occurrences (desc), then assign a percentile by
+            # dividing rank by denominator (i.e. nrows)
+            # Note double dot syntax to access calling scope
+            `:=`(perc_rank = frankv(counter)/..denominator,
+                 # Same for monetary damage
+                 dmg_rank = frankv(total_dmg)/..denominator,
+                 # And life damage
+                 inj_rank = frankv(injuries)/..denominator,
+                 fat_rank = frankv(fatalities)/..denominator
+                 )
+            ][
+                # Filter for frequency rank >=90th
+                perc_rank >= 0.9
+            ][
+                order(-counter)
+            ]
+}
+
+```
+
 ## Abstract
 
 Blah blah
@@ -88,7 +127,10 @@ fdata <- data %>%
         datetime = lubridate::force_tzs(utc_datetime, tzones = c_timezone),
         # Force POSIXct format, otherwise data won't be usable in data.table
         # package functions
-        begin_time = as.POSIXct(datetime)
+        begin_time = as.POSIXct(datetime),
+        # Finally, change EVTYPE into a factor ordered by frequency (may be
+        # CPU-intensive)
+        event = fct_infreq(as.factor(EVTYPE))
     ) %>%
     # Need to drop non-POSIXlt columns for data.table compatibility
     select(-contains("datetime")) %>%
@@ -117,6 +159,7 @@ We will transform them into the actual multiplier so we can compute actual damag
 
 mdata <- fdata %>%
     mutate(
+        year = as.integer(lubridate::year(begin_time)),
         prop_mult = case_when(
             PROPDMGEXP %in% c(0, 1, 2, 3, 4, 5, 6, 7, 8) ~ 10,
             PROPDMGEXP %in% c('m', 'M') ~ 1000000,
@@ -145,8 +188,6 @@ mdata <- fdata %>%
         prop_dmg = PROPDMG * prop_mult,
         tot_dmg = prop_dmg + crop_dmg
     ) 
-
-
 ```
 
 We can get the number of invalid `EXP` values resulting in `0`-value multipliers using the following code:
@@ -184,7 +225,7 @@ According to the requirements for this report, we will be describing association
 
 # Select useful columns
 lean_data <- mdata %>%
-    select(REFNUM, EVTYPE, begin_time, c_timezone,
+    select(REFNUM, event, year, c_timezone,
            FATALITIES, INJURIES, tot_dmg)
 # Economical damages aren't always available, so better have a tibble with all
 # complete cases
@@ -203,16 +244,40 @@ We will now plot the distribution of values of interests, so as to only select s
 
 # Make a copy of data and cast as DT
 dt_data <- as.data.table(lean_data)
-
-sel_data <- dt_data[, .(count = .N,
+# Define the number of rows that will be in the grouped DT. This is equal to the
+# unique values of event, as we'll group by that.
+denominator <- uniqueN(dt_data, "event")
+# Apply final transformations to DT
+sel_data <- dt_data[, .(
+                        counter = .N, # Count elements in group
+                        # Total monetary damages per group
                         total_dmg = sum(tot_dmg, na.rm = TRUE),
+                        # Total fatalities
                         fatalities = sum(FATALITIES, na.rm = TRUE),
+                        # Injuries
                         injuries = sum(INJURIES, na.rm = TRUE)
                         ),
-                    by = EVTYPE][
-                        order(-count, -total_dmg, -fatalities)]
-
-View(sel_data)
-
+                    # Grouping by event type
+                    by = event][
+                        ,
+                        # Compute a "percent rank": rank events by number of
+                        # occurrences (desc), then assign a percentile by
+                        # dividing rank by denominator (i.e. nrows)
+                        # Note double dot syntax to access calling scope
+                        `:=`(perc_rank = frankv(counter)/..denominator,
+                             # Same for monetary damage
+                             dmg_rank = frankv(total_dmg)/..denominator,
+                             # And life damage
+                             inj_rank = frankv(injuries)/..denominator,
+                             fat_rank = frankv(fatalities)/..denominator
+                             )
+                        ][
+                            # Filter for frequency rank >=90th
+                            perc_rank >= 0.9
+                        ][
+                            order(-counter)
+                        ]
+                    
 ```
+
 
