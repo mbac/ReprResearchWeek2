@@ -51,6 +51,11 @@ rank_DT <- function(DT) {
             ]
 }
 
+# Min-max normalization
+normalize <- function(x) {
+    return ((x - min(x)) / (max(x) - min(x)))
+  }
+
 ```
 
 ## Abstract
@@ -272,12 +277,22 @@ sel_data <- dt_data[, .(
                              fat_rank = frankv(fatalities)/..denominator
                              )
                         ][
-                            # Filter for frequency rank >=90th
-                            perc_rank >= 0.9
+                            # Filter for frequency rank >=95th
+                            perc_rank >= 0.95
                         ][
                             order(-counter)
                         ]
                     
 ```
 
+Figure 1 is a panel plot of data at or above the 95^th^ percentile of (A) event frequency by type, (B) monetary damages and (C) damages to persons in the period of interest (1950–2013). One can easily that the magnitude of event-related damages decreases almost exponentially with frequency. It should be noted that the preponderant majority of events below 95^th^ percentile of frequency are actually data-entry errors arising from "event type" being an open-text field in the database.
+
+```{r frequency-plots}
+
+sel_data %>% ggplot(
+    aes(x = fct_reorder(event, injuries, .desc = T), y = inj_rank)
+    ) +
+    geom_point()
+
+```
 
