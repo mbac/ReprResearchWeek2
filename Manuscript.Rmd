@@ -52,7 +52,7 @@ rank_DT <- function(DT) {
 }
 
 # Min-max normalization
-normalize <- function(x) {
+normalizer <- function(x) {
     return ((x - min(x)) / (max(x) - min(x)))
   }
 
@@ -152,8 +152,8 @@ A second column will be created in order to reconstruct information on property 
 `*EXP` values are actually multipliers for variables indicating damages. The full legend can be found [here](ane.st/HandleExponent6c0f3 "Legend for EXP values").
 
 ```{r exponents}
-unique(data$PROPDMGEXP)
-unique(data$CROPDMGEXP)
+unique(fdata$PROPDMGEXP)
+unique(fdata$CROPDMGEXP)
 ```
 
 We will transform them into the actual multiplier so we can compute actual damages. It is known that there are a few malformed values [*e.g.*: empty strings ("")]; they will be set to 0. According to the above analysis, malformed values are negligible both in numbers and absolute values.
@@ -221,7 +221,7 @@ inv_crop_exp <- filter(temp_data, CROPDMG != 0, crop_mult == 0) %>%
     nrow()
 
 # Clean up
-rm(temp_data)
+# rm(temp_data)
 ```
 
 Using **inline code evaluation**, we can report `r inv_prop_exp` invalid property damage exponents, and `r inv_crop_exp` invalid crop damage exponents. Data from these was set to NA in order to compute means *etc...*
@@ -248,10 +248,6 @@ According to the requirements for this report, we will be describing association
 lean_data <- mdata %>%
     select(REFNUM, event, year, c_timezone,
            FATALITIES, INJURIES, tot_dmg)
-# Economical damages aren't always available, so better have a tibble with all
-# complete cases
-dmg_data <- lean_data %>%
-    filter(!is.na(tot_dmg))
 
 ```
 
@@ -259,60 +255,76 @@ dmg_data <- lean_data %>%
 
 The vast majority of events have caused no damage to people or property. More than 90% of event *types* are not associated with damage, and many of them have occurred just once since 1950. This is mostly due to numerous, uncorrected mistakes made in data entry over the first ⅔ of the database's life.
 
-We will now plot the distribution of values of interests, so as to only select significant *event types* in terms of occurrence. We'll work with the 90^th^ percentile (and above) of event frequency.
-
 ```{r evtype-selection}
 
 # Make a copy of data and cast as DT
-dt_data <- as.data.table(lean_data)
+sel_data <- as.data.table(lean_data)
 # Define the number of rows that will be in the grouped DT. This is equal to the
 # unique values of event, as we'll group by that.
 denominator <- uniqueN(dt_data, "event")
+# Make a copy for future use:
+tot_data <- copy(sel_data)
 # Apply final transformations to DT
-sel_data <- dt_data[, .(
-                        counter = .N, # Count elements in group
-                        # Total monetary damages per group
-                        total_dmg = sum(tot_dmg, na.rm = TRUE),
-                        # Total fatalities
-                        fatalities = sum(FATALITIES, na.rm = TRUE),
-                        # Injuries
-                        injuries = sum(INJURIES, na.rm = TRUE)
-                        ),
-                    # Grouping by event type
-                    by = event][
-                        ,
-                        # Compute a "percent rank": rank events by number of
-                        # occurrences (desc), then assign a percentile by
-                        # dividing rank by denominator (i.e. nrows)
-                        # Note double dot syntax to access calling scope
-                        `:=`(perc_rank = frankv(counter)/..denominator,
-                             # Same for monetary damage
-                             dmg_rank = frankv(total_dmg)/..denominator,
-                             # And life damage
-                             inj_rank = frankv(injuries)/..denominator,
-                             fat_rank = frankv(fatalities)/..denominator
-                             )
-                        ][
-                            # Filter for frequency rank >=95th
-                            perc_rank >= 0.90
-                        ][
-                            order(-counter)
-                        ]
-                    
-```
-
-Figure 1 is a panel plot of data at or above the 95^th^ percentile of (A) event frequency by type, (B) monetary damages and (C) damages to persons in the period of interest (1950–2013). One can easily that the magnitude of event-related damages decreases almost exponentially with frequency. It should be noted that the preponderant majority of events below 95^th^ percentile of frequency are actually data-entry errors arising from "event type" being an open-text field in the database.
-
-```{r frequency-plots}
-
-sel_data %>% ggplot(
-  aes(x = fct_reorder(event, perc_rank, .desc = T), y = counter)
-) +
-  geom_point() +
-  scale_y_continuous(
-    # limits = c(0, 100), 
-    name = ("Frequency quantile\n")) +
-  theme_bw()
+sel_data[, .(
+    counter = .N, # Count elements in group
+    # Total monetary damages per group
+    total_dmg = sum(tot_dmg, na.rm = TRUE),
+    # Total fatalities
+    fatalities = sum(FATALITIES, na.rm = TRUE),
+    # Injuries
+    injuries = sum(INJURIES, na.rm = TRUE)
+  ),
+  # Grouping by event type
+  by = event][
+    ,
+    # Compute a "percent rank": rank events by number of
+    # occurrences (desc), then assign a percentile by
+    # dividing rank by denominator (i.e. nrows)
+    # Note double dot syntax to access calling scope
+    `:=`(perc_rank = frankv(counter)/..denominator,
+         # Same for monetary damage
+         dmg_rank = frankv(total_dmg)/..denominator,
+         # And life damage
+         inj_rank = frankv(injuries)/..denominator,
+         fat_rank = frankv(fatalities)/..denominator
+    )
+  ][
+    # Filter for frequency rank >=95th
+    perc_rank >= 0.90
+  ][
+    order(-counter)
+  ]
 
 ```
+
+```{r ev-selection-comparison}
+
+gdata <- as.data.table(temp_data)
+# With DT syntax, group and compute relevant sums
+totals <- gdata[,.(sum_inj = sum(INJURIES, na.rm = T),
+               sum_fat = sum(FATALITIES, na.rm = T),
+               sum_dmg = sum(tot_dmg, na.rm = T))]
+
+selected <- sel_data[,.(sum_inj = sum(INJURIES, na.rm = T),
+               sum_fat = sum(FATALITIES, na.rm = T),
+               sum_dmg = sum(tot_dmg, na.rm = T))]
+
+totals == selected
+```
+
+Events below the 90^th^ percentile of frequency are mostly irrelevant to the analysis. To confirm this, we calculated total damages, injuries and fatalities from the global data and from the selected data. Results are identical (see above), despite the latter table having only a fraction of the event types (`r length(unique(gdata$event))` _vs._ `r length(unique(sel_data$event))`).
+
+### Aggregation of events by type
+
+```{r event-aggregation}
+
+# Functions to aggregate (collapse) factor levels require specific values, specified in a named vector. Here, we use "data mining" to generate such vector.
+
+# Create regexp patterns to match to. The following is also the priority order
+# with which events will be assigned to a category.
+stormy <- c("storm*", "thunder*", "tstm", "rain", "precip")
+maritime <- c("sea*", "ocean*", "mari[nt]*", "curr*", "tid*", "surf*")
+
+```
+
 
