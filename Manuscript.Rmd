@@ -162,7 +162,7 @@ We will transform them into the actual multiplier so we can compute actual damag
 
 # Cannot use dtplyr here because of error: Can't rename variables in this context.
 
-mdata <- fdata %>%
+temp_data <- fdata %>%
     mutate(
         year = as.integer(lubridate::year(begin_time)),
         prop_mult = case_when(
@@ -192,20 +192,36 @@ mdata <- fdata %>%
         crop_dmg = CROPDMG * crop_mult,
         prop_dmg = PROPDMG * prop_mult,
         tot_dmg = prop_dmg + crop_dmg
-    ) 
-```
+    )
 
+# Switch back to dtplyr syntax and clean up
+temp_data <- lazy_dt(temp_data)
+
+# Filter out events which did not cause any injuries, fatalities or monetary
+# damages
+mdata <- temp_data %>% filter(
+  (INJURIES > 0) | 
+    (FATALITIES > 0) |
+    (tot_dmg > 0)
+) %>%
+  # Apply data.table code
+  as_tibble()
+
+```
 We can get the number of invalid `EXP` values resulting in `0`-value multipliers using the following code:
 
 ```{r invalid-exps}
 # Property damage
-inv_prop_exp <- filter(mdata, PROPDMG != 0, prop_mult == 0) %>%
+inv_prop_exp <- filter(temp_data, PROPDMG != 0, prop_mult == 0) %>%
     select(PROPDMG, PROPDMGEXP, prop_mult, BGN_DATE) %>%
     nrow()
 
-inv_crop_exp <- filter(mdata, CROPDMG != 0, crop_mult == 0) %>%
+inv_crop_exp <- filter(temp_data, CROPDMG != 0, crop_mult == 0) %>%
     select(CROPDMG, CROPDMGEXP, crop_mult, BGN_DATE) %>%
     nrow()
+
+# Clean up
+rm(temp_data)
 ```
 
 Using **inline code evaluation**, we can report `r inv_prop_exp` invalid property damage exponents, and `r inv_crop_exp` invalid crop damage exponents. Data from these was set to NA in order to compute means *etc...*
@@ -216,9 +232,9 @@ These data do not seem to be needing any significant adjustments:
 
 ```{r inj-fat-describe}
 
-skimr::skim(fdata$INJURIES)
+skimr::skim(mdata$INJURIES)
 cat("\n\n\n")
-skimr::skim(fdata$FATALITIES)
+skimr::skim(mdata$FATALITIES)
 
 ```
 
@@ -278,7 +294,7 @@ sel_data <- dt_data[, .(
                              )
                         ][
                             # Filter for frequency rank >=95th
-                            perc_rank >= 0.95
+                            perc_rank >= 0.90
                         ][
                             order(-counter)
                         ]
@@ -290,9 +306,13 @@ Figure 1 is a panel plot of data at or above the 95^th^ percentile of (A) event 
 ```{r frequency-plots}
 
 sel_data %>% ggplot(
-    aes(x = fct_reorder(event, injuries, .desc = T), y = inj_rank)
-    ) +
-    geom_point()
+  aes(x = fct_reorder(event, perc_rank, .desc = T), y = counter)
+) +
+  geom_point() +
+  scale_y_continuous(
+    # limits = c(0, 100), 
+    name = ("Frequency quantile\n")) +
+  theme_bw()
 
 ```
 
