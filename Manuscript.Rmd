@@ -135,7 +135,7 @@ fdata <- data %>%
         begin_time = as.POSIXct(datetime),
         # Finally, change EVTYPE into a factor ordered by frequency (may be
         # CPU-intensive)
-        event = fct_infreq(as.factor(EVTYPE))
+        event = fct_infreq(as.factor(str_to_lower(EVTYPE)))
     ) %>%
     # Need to drop non-POSIXlt columns for data.table compatibility
     select(-contains("datetime")) %>%
@@ -322,9 +322,35 @@ Events below the 90^th^ percentile of frequency are mostly irrelevant to the ana
 
 # Create regexp patterns to match to. The following is also the priority order
 # with which events will be assigned to a category.
-stormy <- c("storm*", "thunder*", "tstm", "rain", "precip")
-maritime <- c("sea*", "ocean*", "mari[nt]*", "curr*", "tid*", "surf*")
+new_fcts <- c(
+  hail = c("hail"),
+  tornado = c("torn", "nado"),
+  tsunami = c("tsun"),
+  stormy = c("storm*", "thunder*", "tstm", "rain", "precip", "hurric"),
+  lightning = c("lightn"),
+  flood = c("flood", "seiche"),
+  cold = c("cold", "ice", "sleet", "winter", "snow", "blizz", "avalan"),
+  heat = c("heat", "hot", "summ", "warm"),
+  windy = c("wind", "devil", "b*rst"),
+  maritime = c("sea*", "ocean*", "mari[nt]*",
+               "curr*", "tid*", "surf*", "wav", "swell"),
+  fog = c("fog"),
+  drought = c("drought"),
+  fire = c("fire", "blaze", "smok"),
+  landslide = c("slide")
+)
 
+# Initialize vector which will contain matching event names
+results <- c()
+counter <- 1
+
+for (gigio in new_fcts) {
+  fct <- str_subset(head(sel_data$event, 50), gigio)
+  results <- c(results, setNames(fct, names(new_fcts)[counter]))
+  counter <- counter + 1
+}
+
+names(results) <- res_names
 ```
 
 
