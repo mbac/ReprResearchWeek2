@@ -212,13 +212,15 @@ We can get the number of invalid `EXP` values resulting in `0`-value multipliers
 
 ```{r invalid-exps}
 # Property damage
-inv_prop_exp <- filter(temp_data, PROPDMG != 0, prop_mult == 0) %>%
-    select(PROPDMG, PROPDMGEXP, prop_mult, BGN_DATE) %>%
-    nrow()
+inv_prop_exp <- filter(temp_data, PROPDMG != 0, prop_mult == -999999) %>%
+  select(PROPDMG, PROPDMGEXP, prop_mult, BGN_DATE) %>%
+  as.data.frame() %>%
+  nrow()
 
-inv_crop_exp <- filter(temp_data, CROPDMG != 0, crop_mult == 0) %>%
-    select(CROPDMG, CROPDMGEXP, crop_mult, BGN_DATE) %>%
-    nrow()
+inv_crop_exp <- filter(temp_data, CROPDMG != 0, crop_mult == -999999) %>%
+  select(CROPDMG, CROPDMGEXP, crop_mult, BGN_DATE) %>%
+  as.data.frame() %>%
+  nrow()
 
 # Clean up
 # rm(temp_data)
@@ -261,7 +263,7 @@ The vast majority of events have caused no damage to people or property. More th
 sel_data <- as.data.table(lean_data)
 # Define the number of rows that will be in the grouped DT. This is equal to the
 # unique values of event, as we'll group by that.
-denominator <- uniqueN(dt_data, "event")
+denominator <- uniqueN(fdata, "event")
 # Make a copy for future use:
 tot_data <- copy(sel_data)
 # Apply final transformations to DT
@@ -316,17 +318,19 @@ Events below the 90^th^ percentile of frequency are mostly irrelevant to the ana
 
 ### Aggregation of events by type
 
+We then aggregate event types into arbitrary categories, both for clarity and because there is artificial variability in the form of spelling errors and variations (_e.g._: )
+
 ```{r event-aggregation}
 
 # Functions to aggregate (collapse) factor levels require specific values, specified in a named vector. Here, we use "data mining" to generate such vector.
 
 # Create regexp patterns to match to. The following is also the priority order
 # with which events will be assigned to a category.
-new_fcts <- c(
+new_fcts <- list(
   hail = c("hail"),
   tornado = c("torn", "nado"),
   tsunami = c("tsun"),
-  stormy = c("storm*", "thunder*", "tstm", "rain", "precip", "hurric"),
+  stormy = c("storm*", "thunder*", "tstm", "rain", "precip", "hurric", "spout"),
   lightning = c("lightn"),
   flood = c("flood", "seiche"),
   cold = c("cold", "ice", "sleet", "winter", "snow", "blizz", "avalan"),
@@ -341,16 +345,61 @@ new_fcts <- c(
 )
 
 # Initialize vector which will contain matching event names
-results <- c()
-counter <- 1
+old_events <- vector("list", 14)
+new_events <- c()
+i <- 1
 
-for (gigio in new_fcts) {
-  fct <- str_subset(head(sel_data$event, 50), gigio)
-  results <- c(results, setNames(fct, names(new_fcts)[counter]))
-  counter <- counter + 1
-}
+suppressWarnings(
+  # For every new event category
+  for (i in seq(1:length(new_fcts))) {
+    # Match old event instances
+    old_instances <- str_subset(sel_data$event, new_fcts[[i]])
+    # Add to list
+    old_events[[i]] <- unique(old_instances)
+    i <- i + 1
+  }
+)
+# Name (tag) list elements
+names(old_events) <- names(new_fcts)
 
-names(results) <- res_names
+# TODO: switch to using list names instead of manual entry of new factor levels
+sel_data$event2 <- fct_collapse(
+  sel_data$event,
+  hail = old_events$hail,
+  tornado = old_events$tornado,
+  tsunami = old_events$tsunami,
+  stormy = old_events$stormy,
+  lightning = old_events$lightning,
+  flood = old_events$flood,
+  cold = old_events$cold,
+  heat = old_events$heat,
+  windy = old_events$windy,
+  maritime = old_events$maritime,
+  fog = old_events$fog,
+  drought = old_events$drought,
+  fire = old_events$fire,
+  landslide = old_events$landslide,
+  other_level = "Other events"
+) %>%
+  fct_recode(
+    "Hail" = "hail",
+    "Winds" = "windy",
+    "Tornadoes" = "tornado",
+    "Floods" = "flood",
+    "Lightnings" = "lightning",
+    "Cold weather" = "cold",
+    "Storms/Rains" = "stormy",
+    "Oceanic events" = "maritime",
+    "Fires" = "fire",
+    "Droughts" = "drought",
+    "Hot weather" = "heat",
+    "Fog" = "fog",
+    "Landslides" = "landslide",
+    "Tsunamis" = "tsunami"
+  ) %>%
+  # Reorder according to frequency, desc
+  fct_infreq()
+
 ```
 
 
