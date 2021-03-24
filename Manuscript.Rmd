@@ -66,11 +66,7 @@ Blah blah
 
 We analyze this, that and something else...
 
-## Methods
-
-The following code was used for analysis
-
-## Data preparation
+## Data Processing
 
 First, we download the data file and load it into an R object. We're using a `tidyr`-centric approach, leveraging on the full suite of library found in package `tidyverse`.
 
@@ -147,9 +143,7 @@ fdata <- data %>%
 
 ### Property and agricultural damages
 
-A second column will be created in order to reconstruct information on property damage: columns `PROPDMGEXP` specifies an "exponent" for `PROPDMG`, in the form of a mathematical suffix: K for thousands, M for millions, and so on... We will compute a column containing the actual amount as an integer or double. Same operation will be performed for `CROPDMG` and `CROPDMGEXP`.
-
-`*EXP` values are actually multipliers for variables indicating damages. The full legend can be found [here](ane.st/HandleExponent6c0f3 "Legend for EXP values").
+A second column will be created in order to reconstruct information on property damage: columns `PROPDMGEXP` specifies an "exponent" for `PROPDMG`, in the form of a mathematical suffix: K for thousands, M for millions, and so on... Values can also be integers, in which case they seem to indicate that the reported damage value is to be multiplied by 10 (see full legend [here](ane.st/HandleExponent6c0f3 "Legend for EXP values"). We will compute a column containing the actual amount as an integer or double. Same operation will be performed for `CROPDMG` and `CROPDMGEXP`.
 
 ```{r exponents}
 unique(fdata$PROPDMGEXP)
@@ -208,9 +202,11 @@ mdata <- temp_data %>% filter(
   as_tibble()
 
 ```
-We can get the number of invalid `EXP` values resulting in `0`-value multipliers using the following code:
 
-```{r invalid-exps}
+```{r invalid-exps, eval=FALSE, include=FALSE}
+
+# DEBUG: this chunk not to be run nor shown when knitting.
+
 # Property damage
 inv_prop_exp <- filter(temp_data, PROPDMG != 0, prop_mult == -999999) %>%
   select(PROPDMG, PROPDMGEXP, prop_mult, BGN_DATE) %>%
@@ -225,8 +221,6 @@ inv_crop_exp <- filter(temp_data, CROPDMG != 0, crop_mult == -999999) %>%
 # Clean up
 # rm(temp_data)
 ```
-
-Using **inline code evaluation**, we can report `r inv_prop_exp` invalid property damage exponents, and `r inv_crop_exp` invalid crop damage exponents. Data from these was set to NA in order to compute means *etc...*
 
 ### Injuries and fatalities
 
@@ -314,11 +308,11 @@ selected <- sel_data[,.(sum_inj = sum(INJURIES, na.rm = T),
 totals == selected
 ```
 
-Events below the 90^th^ percentile of frequency are mostly irrelevant to the analysis. To confirm this, we calculated total damages, injuries and fatalities from the global data and from the selected data. Results are identical (see above), despite the latter table having only a fraction of the event types (`r length(unique(gdata$event))` _vs._ `r length(unique(sel_data$event))`).
+Events below the 90^th^ percentile of frequency are mostly irrelevant to the analysis. To confirm this, we calculated total damages, injuries and fatalities from the global data and from the selected data. Results are identical (see above), despite the latter table having only a fraction of the event types (`r length(unique(gdata$event))` *vs.* `r length(unique(sel_data$event))`).
 
 ### Aggregation of events by type
 
-We then aggregate event types into arbitrary categories, both for clarity and because there is artificial variability in the form of spelling errors and variations (_e.g._: )
+We then aggregate event types into arbitrary categories, both for clarity and because there is artificial variability in the form of spelling errors and variations (*e.g.*: `hail`, `marine hail`, `hail/wind`, `small hail` and so forth...)
 
 ```{r event-aggregation}
 
@@ -344,7 +338,7 @@ new_fcts <- list(
   landslide = c("slide")
 )
 
-# Initialize vector which will contain matching event names
+# Initialize list, vector and counter for the loop
 old_events <- vector("list", 14)
 new_events <- c()
 i <- 1
@@ -402,4 +396,28 @@ sel_data$event2 <- fct_collapse(
 
 ```
 
+The choice of the fourteen categories was arbitrary, based on observation of event types appearing in the selected data. There are limitations to this approach, namely: events belonging to more than one category; and likely oversight of extremely rare events.
 
+```{r memory-release-cleanup}
+
+# Clean up large dataframes, no longer used
+erase_us <- c("data", "fdata", "gdata", "mdata", "rdata", "tot_data")
+rm(list = erase_us)
+```
+
+## Results
+
+```{r overall-plot}
+
+# Create plot data, use dtplyr for speed and convenience
+pdata <- lazy_dt(sel_data)
+
+# Plotting total instances of each event category
+# pdata %>%
+#     group_by(event2) %>%
+#     summarise(
+#         count = n(),
+#         
+#     )
+
+```
