@@ -274,10 +274,10 @@ sel_data2 <- sel_data[, .(
     # Note double dot syntax to access calling scope
     `:=`(perc_rank = frankv(counter)/.N,
          # Same for monetary damage
-         dmg_rank = frankv(total_dmg)/..denominator,
+         dmg_rank = frankv(total_dmg)/.N,
          # And life damage
-         inj_rank = frankv(injuries)/..denominator,
-         fat_rank = frankv(fatalities)/..denominator
+         inj_rank = frankv(injuries)/.N,
+         fat_rank = frankv(fatalities)/.N
     )
   ][
     # Filter for frequency rank >=95th
@@ -304,13 +304,13 @@ selected <- sel_data2[,.(sum_inj = sum(injuries, na.rm = T),
 round((selected/totals), digits = 2)
 ```
 
-Events below the 80^th^ percentile of frequency are mostly irrelevant to the analysis. To confirm this, we calculated total damages, injuries and fatalities from the global data and from the selected data. Results are identical (see above), despite the latter table having only a fraction of the event types (`r length(unique(gdata$event))` *vs.* `r length(unique(sel_data2$event))`).
+Events below the 80^th^ percentile of frequency are mostly irrelevant to the analysis. To confirm this, we calculated total damages, injuries and fatalities from the global data and from the selected data. The ratios of the selected data to the global data is near 1 (see above), despite the selected data table having only a fraction of the event types (`r length(unique(gdata$event))` *vs.* `r length(unique(sel_data2$event))`).
 
 ### Aggregation of events by type
 
 We then aggregate event types into arbitrary categories, both for clarity and because there is artificial variability in the form of spelling errors and variations (*e.g.*: `hail`, `marine hail`, `hail/wind`, `small hail` and so forth...)
 
-```{r event-aggregation}
+```{r event-aggregation, warning=FALSE}
 
 # Functions to aggregate (collapse) factor levels require specific values, specified in a named vector. Here, we use "data mining" to generate such vector.
 
@@ -322,13 +322,13 @@ new_fcts <- list(
   tsunami = c("tsun"),
   stormy = c("storm*", "thunder*", "tstm", "rain", "precip", "hurric", "spout"),
   lightning = c("lightn"),
-  flood = c("flood", "seiche"),
-  cold = c("cold", "ice", "sleet", "winter", "snow", "blizz", "avalan"),
+  flood = c("flood", "seiche", "fld"),
+  cold = c("snow", "cold", "ice", "sleet", "^*inter", "blizz", "avalan"),
   heat = c("heat", "hot", "summ", "warm"),
   windy = c("wind", "devil", "b*rst"),
+  fog = c("fog"),
   maritime = c("sea*", "ocean*", "mari[nt]*",
                "curr*", "tid*", "surf*", "wav", "swell"),
-  fog = c("fog"),
   drought = c("drought"),
   fire = c("fire", "blaze", "smok"),
   landslide = c("slide")
@@ -340,21 +340,30 @@ new_events <- c()
 i <- 1
 
 suppressWarnings(
-  # For every new event category
-  for (i in seq(1:length(new_fcts))) {
-    # Match old event instances
-    old_instances <- str_subset(sel_data$event, new_fcts[[i]])
-    # Add to list
-    old_events[[i]] <- unique(old_instances)
-    i <- i + 1
-  }
+    # For every new event category
+    for (i in seq(1:length(new_fcts))) {
+        # Prepare storage array
+        old_instances <- c()
+        k <- 1
+        # Loop over elements in list element
+        for (k in seq(1:length(new_fcts[[i]]))) {
+            # Match old event instances
+            old_instances <- c(old_instances,
+                               str_subset(sel_data2$event, new_fcts[[i]][k])
+                                )
+            k <- k + 1
+        }
+        # Add to list
+        old_events[[i]] <- unique(old_instances)
+        i <- i + 1
+    }
 )
 # Name (tag) list elements
 names(old_events) <- names(new_fcts)
 
 # TODO: switch to using list names instead of manual entry of new factor levels
-sel_data$event2 <- fct_collapse(
-  sel_data$event,
+sel_data2$event2 <- fct_collapse(
+  sel_data2$event,
   hail = old_events$hail,
   tornado = old_events$tornado,
   tsunami = old_events$tsunami,
@@ -406,7 +415,7 @@ rm(list = erase_us)
 ```{r overall-plot}
 
 # Create plot data, use dtplyr for speed and convenience
-pdata <- lazy_dt(sel_data)
+pdata <- lazy_dt(sel_data2)
 
 # Plotting total instances of each event category
 # pdata %>%
