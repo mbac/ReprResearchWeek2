@@ -255,13 +255,8 @@ The vast majority of events have caused no damage to people or property. More th
 
 # Make a copy of data and cast as DT
 sel_data <- as.data.table(lean_data)
-# Define the number of rows that will be in the grouped DT. This is equal to the
-# unique values of event, as we'll group by that.
-denominator <- uniqueN(fdata, "event")
-# Make a copy for future use:
-tot_data <- copy(sel_data)
 # Apply final transformations to DT
-sel_data[, .(
+sel_data2 <- sel_data[, .(
     counter = .N, # Count elements in group
     # Total monetary damages per group
     total_dmg = sum(tot_dmg, na.rm = TRUE),
@@ -271,13 +266,13 @@ sel_data[, .(
     injuries = sum(INJURIES, na.rm = TRUE)
   ),
   # Grouping by event type
-  by = event][
+  by = .(event)][
     ,
     # Compute a "percent rank": rank events by number of
     # occurrences (desc), then assign a percentile by
     # dividing rank by denominator (i.e. nrows)
     # Note double dot syntax to access calling scope
-    `:=`(perc_rank = frankv(counter)/..denominator,
+    `:=`(perc_rank = frankv(counter)/.N,
          # Same for monetary damage
          dmg_rank = frankv(total_dmg)/..denominator,
          # And life damage
@@ -286,7 +281,7 @@ sel_data[, .(
     )
   ][
     # Filter for frequency rank >=95th
-    perc_rank >= 0.90
+    perc_rank >= 0.80
   ][
     order(-counter)
   ]
@@ -301,14 +296,15 @@ totals <- gdata[,.(sum_inj = sum(INJURIES, na.rm = T),
                sum_fat = sum(FATALITIES, na.rm = T),
                sum_dmg = sum(tot_dmg, na.rm = T))]
 
-selected <- sel_data[,.(sum_inj = sum(INJURIES, na.rm = T),
-               sum_fat = sum(FATALITIES, na.rm = T),
-               sum_dmg = sum(tot_dmg, na.rm = T))]
+selected <- sel_data2[,.(sum_inj = sum(injuries, na.rm = T),
+               sum_fat = sum(fatalities, na.rm = T),
+               sum_dmg = sum(total_dmg, na.rm = T))]
 
-totals == selected
+# Proportion of damages in selected events as opposed to total
+round((selected/totals), digits = 2)
 ```
 
-Events below the 90^th^ percentile of frequency are mostly irrelevant to the analysis. To confirm this, we calculated total damages, injuries and fatalities from the global data and from the selected data. Results are identical (see above), despite the latter table having only a fraction of the event types (`r length(unique(gdata$event))` *vs.* `r length(unique(sel_data$event))`).
+Events below the 80^th^ percentile of frequency are mostly irrelevant to the analysis. To confirm this, we calculated total damages, injuries and fatalities from the global data and from the selected data. Results are identical (see above), despite the latter table having only a fraction of the event types (`r length(unique(gdata$event))` *vs.* `r length(unique(sel_data2$event))`).
 
 ### Aggregation of events by type
 
@@ -401,7 +397,7 @@ The choice of the fourteen categories was arbitrary, based on observation of eve
 ```{r memory-release-cleanup}
 
 # Clean up large dataframes, no longer used
-erase_us <- c("data", "fdata", "gdata", "mdata", "rdata", "tot_data")
+erase_us <- c("data", "fdata", "gdata", "mdata", "rdata")
 rm(list = erase_us)
 ```
 
