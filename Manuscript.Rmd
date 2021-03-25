@@ -401,7 +401,7 @@ sel_data2$event2 <- fct_collapse(
 
 ```
 
-The choice of the fourteen categories was arbitrary, based on observation of event types appearing in the selected data. There are limitations to this approach, namely: events belonging to more than one category; and likely oversight of extremely rare events.
+The choice of the fourteen categories was arbitrary, based on observation of event types appearing in the selected data. There are limitations to this approach, namely: events belonging to more than one category; and possible oversight of extremely rare events.
 
 ```{r memory-release-cleanup}
 
@@ -414,8 +414,31 @@ rm(list = erase_us)
 
 ```{r overall-plot}
 
-# Create plot data, use dtplyr for speed and convenience
-pdata <- lazy_dt(sel_data2)
+# Make a copy of data to be sorted by damage total, descending, for use in
+# damage-related plots.
+dmgdata <- sel_data2 %>%
+    group_by(event2) %>%
+    summarise(total_dmg = sum(total_dmg)) %>%
+    mutate(event2 = as.character(event2)) %>%
+    arrange(desc(total_dmg)) %>%
+    as_tibble() 
+
+dmgdata %>%
+    ggplot(aes(
+        x = reorder(event2, -total_dmg),
+        y = total_dmg)) +
+    geom_col() +
+    scale_y_continuous(
+        labels = scales::label_dollar(prefix = NULL,
+                                      scale = 1e-9,
+                                      largest_with_cents = 1),
+        name = "Total estimated damages caused\n(in billions of dollars)\n"
+    ) + 
+    scale_x_discrete("\nWeather event category (1950–2013)") +
+    coord_cartesian(ylim = c(0, 5e10)) +
+    theme_classic()
+
+
 
 # Plotting total instances of each event category
 # pdata %>%
