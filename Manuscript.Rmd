@@ -3,6 +3,7 @@ title: "Storm Data Analysis - Week 4"
 author: "Marco Baciarello"
 date: "3/17/2021"
 output: html_document
+  fig_caption: yes
 ---
 
 ```{r setup, include=FALSE}
@@ -236,6 +237,7 @@ skimr::skim(mdata$FATALITIES)
 
 ### Selection of variables of interest
 
+
 According to the requirements for this report, we will be describing associations between weather events and human and economical damages. After preparatory operations performed above, we will now drop variables which are not of interest to these analyses, in order to make data more easily readable and reduce resource requirements.
 
 ```{r data-column-thinning}
@@ -310,6 +312,8 @@ Events below the 80^th^ percentile of frequency are mostly irrelevant to the ana
 
 We then aggregate event types into arbitrary categories, both for clarity and because there is artificial variability in the form of spelling errors and variations (*e.g.*: `hail`, `marine hail`, `hail/wind`, `small hail` and so forth...)
 
+Nested loops is our way of going through a factor variable and associating each value to a value in a new factor variable (many-to-one relationship.). The need for loops seems to be related to the fact that these vars are stored as factors, and the lack of a specific function in the forcats package; fct_collapse() might have been one solution, but it takes the exact factor level names—since there were almost 1000 different possible levels, it would have been impractical to call this function.
+
 ```{r event-aggregation, warning=FALSE}
 
 # Functions to aggregate (collapse) factor levels require specific values, specified in a named vector. Here, we use "data mining" to generate such vector.
@@ -338,7 +342,13 @@ new_fcts <- list(
 old_events <- vector("list", 14)
 new_events <- c()
 i <- 1
+```
 
+We create a list of possible synonims for weather events. In the inner loop, the factor variable is run (using `stringr::subset()` sequentially against each list element and its children. Where there's a match, the function returns the full value of the variable. We aggregate these values in a vector. In the outer loop, the unique values (i.e., factor levels) are appended to a second list. The second list has a list-element for each of the new factor levels; the old factor levels are thus stored as children of the new ones, based on matching with our criteria.
+
+Once complete, the list _could_ be used as a named vector. However, for some reason we had to insert each element manually using list$element syntax.
+
+```{r factor-loops}
 suppressWarnings(
     # For every new event category
     for (i in seq(1:length(new_fcts))) {
@@ -380,6 +390,7 @@ sel_data2$event2 <- fct_collapse(
   landslide = old_events$landslide,
   other_level = "Other events"
 ) %>%
+  # Adjust spelling/capitalization of factor levels
   fct_recode(
     "Hail" = "hail",
     "Winds" = "windy",
@@ -410,42 +421,91 @@ erase_us <- c("data", "fdata", "gdata", "mdata", "rdata")
 rm(list = erase_us)
 ```
 
+```{r figure-captions}
+fig.1.caption = "**Fig. 1:** Figure 1"
+```
+
 ## Results
 
-```{r overall-plot}
+Data on agricultural (crop) and property damages show unequivocal predominance of flooding phenomena as causes. At `r scales::dollar(dmgdata$total_dmg[1])`, overflowing of oceans, lakes and rivers caused about 4 times as much damage as storms and other rain phenomena, a distant second in ranking. One can easily imagine damages from disasters such as hurricanes Katrina and Sandy are the primary drivers of this result.
+
+```{r damage-plot, fig.cap=fig.1.caption}
 
 # Make a copy of data to be sorted by damage total, descending, for use in
 # damage-related plots.
 dmgdata <- sel_data2 %>%
     group_by(event2) %>%
-    summarise(total_dmg = sum(total_dmg)) %>%
+    summarise(total_dmg = sum(total_dmg),
+              total_inj = sum(injuries),
+              total_fat = sum(fatalities)
+              ) %>%
     mutate(event2 = as.character(event2)) %>%
     arrange(desc(total_dmg)) %>%
-    as_tibble() 
+    as_tibble()
+
+### Damage plot
+
+dmgdata %>%
+  ggplot(aes(
+    x = reorder(event2, -total_dmg),
+    y = total_dmg)) +
+  geom_col() +
+  scale_y_continuous(
+    labels = scales::label_dollar(prefix = NULL,
+                                  scale = 1e-9,
+                                  largest_with_cents = 1),
+    name = "Total estimated damages caused\n(in billions of dollars)\n"
+  ) + 
+  scale_x_discrete("\nWeather event category (1950–2013)") +
+  coord_cartesian(ylim = c(0, 5e10)) +
+  annotate("segment", x= 2.2, xend = 1.5, y = 50e9, yend = 52e9,
+           arrow = arrow(angle = 20,
+                         length = unit(0.15, "inches"),
+                         type = "closed")
+  ) + 
+  annotate("text",
+           x = 4.3, y = 49e9,
+           label = "Plot clipped for readability.\nActual value: $147 billion") +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 70, hjust = 1))
+#####
+
+```
+
+
+
+```{r injuries-plot}
+### Injuries plot
 
 dmgdata %>%
     ggplot(aes(
-        x = reorder(event2, -total_dmg),
-        y = total_dmg)) +
+        x = reorder(event2, -total_inj),
+        y = total_inj)) +
     geom_col() +
-    scale_y_continuous(
-        labels = scales::label_dollar(prefix = NULL,
-                                      scale = 1e-9,
-                                      largest_with_cents = 1),
-        name = "Total estimated damages caused\n(in billions of dollars)\n"
-    ) + 
     scale_x_discrete("\nWeather event category (1950–2013)") +
-    coord_cartesian(ylim = c(0, 5e10)) +
-    theme_classic()
-
-
-
-# Plotting total instances of each event category
-# pdata %>%
-#     group_by(event2) %>%
-#     summarise(
-#         count = n(),
-#         
-#     )
+    scale_y_continuous(name = "Related injuries reported\n",
+                       breaks = seq(0, 1e5, 1e4),
+                       labels = scales::label_comma()) +
+    theme_classic() +
+    theme(axis.text.x = element_text(angle = 70, hjust = 1))
 
 ```
+
+```{r fatalities-plot}
+### Fatalities plot
+
+dmgdata %>%
+    ggplot(aes(
+        x = reorder(event2, -total_fat),
+        y = total_fat)) +
+    geom_col() +
+    scale_x_discrete("\nWeather event category (1950–2013)") +
+    scale_y_continuous(name = "Related fatalities reported\n",
+                       #breaks = scales::extended_breaks(),
+                       breaks = seq(0, 5e3, 1e3),
+                       labels = scales::label_comma()) +
+    theme_classic() +
+    theme(axis.text.x = element_text(angle = 70, hjust = 1))
+```
+
+## Conclusions
