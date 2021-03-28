@@ -32,3 +32,4 @@ data/*
 ReprResearchWeek2.Rproj
 test.RData
 debug.RData
+rsconnect/*
