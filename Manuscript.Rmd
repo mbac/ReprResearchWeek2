@@ -2,8 +2,10 @@
 title: "Storm Data Analysis - Week 4"
 author: "Marco Baciarello"
 date: "3/17/2021"
-output: html_document
-  fig_caption: yes
+output:
+  html_document:
+    fig_captions: TRUE
+
 ---
 
 ```{r setup, include=FALSE}
@@ -421,15 +423,11 @@ erase_us <- c("data", "fdata", "gdata", "mdata", "rdata")
 rm(list = erase_us)
 ```
 
-```{r figure-captions}
+```{r figure-captions, include=FALSE}
 fig.1.caption = "**Fig. 1:** Figure 1"
 ```
 
-## Results
-
-Data on agricultural (crop) and property damages show unequivocal predominance of flooding phenomena as causes. At `r scales::dollar(dmgdata$total_dmg[1])`, overflowing of oceans, lakes and rivers caused about 4 times as much damage as storms and other rain phenomena, a distant second in ranking. One can easily imagine damages from disasters such as hurricanes Katrina and Sandy are the primary drivers of this result.
-
-```{r damage-plot, fig.cap=fig.1.caption}
+``` {r final-data-computations}
 
 # Make a copy of data to be sorted by damage total, descending, for use in
 # damage-related plots.
@@ -442,6 +440,14 @@ dmgdata <- sel_data2 %>%
     mutate(event2 = as.character(event2)) %>%
     arrange(desc(total_dmg)) %>%
     as_tibble()
+
+```
+
+## Results
+
+Data on agricultural (crop) and property damages show unequivocal predominance of flooding phenomena as causes. At `r scales::dollar(dmgdata$total_dmg[1])`, overflowing of oceans, lakes and rivers caused about 4 times as much damage as storms and other rain phenomena, a distant second in ranking. One can easily imagine damages from disasters such as hurricanes Katrina and Sandy are the primary drivers of this result.
+
+```{r damage-plot, fig.cap=fig.1.caption}
 
 ### Damage plot
 
