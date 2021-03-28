@@ -175,10 +175,6 @@ pre code {
 <h2>Synopsis</h2>
 <p>In this data analysis we studied data from the National Weather Service, detailing weather events and the damages they caused between 1950 and 2011. Most data entry was poorly regulated, especially during the database’s early years, so text mining was required in order to classify weather events in more generalizable categories. From this database, it appears that floods were by far the main cause of monetary losses in the studied period; it is likely that Hurricane Katrina and, to a lesser extent, Sandy were the main drivers of this result. Injuries and loss of life occurred significantly more often as consequences of tornadoes. Other wind events, extreme temperatures and floods were also associated with significant loss of life.</p>
 </div>
-<div id="introduction" class="section level2">
-<h2>Introduction</h2>
-<p>We analyze this, that and something else…</p>
-</div>
 <div id="data-processing" class="section level2">
 <h2>Data Processing</h2>
 <p>First, we download the data file and load it into an R object. We’re using a <code>tidyr</code>-centric approach, leveraging on the full suite of library found in package <code>tidyverse</code>.</p>
@@ -371,7 +367,6 @@ mdata &lt;- temp_data %&gt;% filter(
 </tr>
 </tbody>
 </table>
-<pre class="r"><code>cat(&quot;\n\n\n&quot;)</code></pre>
 <pre class="r"><code>skimr::skim(mdata$FATALITIES)</code></pre>
 <table>
 <caption>Data summary</caption>
@@ -595,11 +590,7 @@ sel_data2$event2 &lt;- fct_collapse(
   ) %&gt;%
   # Reorder according to frequency, desc
   fct_infreq()</code></pre>
-<pre><code>## Warning: Unknown levels in `f`: tsunami</code></pre>
 <p>The choice of the fourteen categories was arbitrary, based on observation of event types appearing in the selected data. There are limitations to this approach, namely: events belonging to more than one category; and possible oversight of extremely rare events.</p>
-<pre class="r"><code># Clean up large dataframes, no longer used
-erase_us &lt;- c(&quot;data&quot;, &quot;fdata&quot;, &quot;gdata&quot;, &quot;mdata&quot;, &quot;rdata&quot;)
-rm(list = erase_us)</code></pre>
 <pre class="r"><code># Make a copy of data to be sorted by damage total, descending, for use in
 # damage-related plots.
 dmgdata &lt;- sel_data2 %&gt;%

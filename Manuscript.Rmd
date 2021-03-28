@@ -8,13 +8,12 @@ output:
 
 ---
 
-```{r setup, include=FALSE}
+```{r setup}
 knitr::opts_chunk$set(echo = TRUE, cache = TRUE, autodep = TRUE)
 
 suppressMessages(library(tidyverse))
 suppressMessages(library(dtplyr))
 suppressMessages(library(data.table))
-# library(skimr)
 ```
 
 ## Synopsis
@@ -22,11 +21,6 @@ suppressMessages(library(data.table))
 In this data analysis we studied data from the National Weather Service, detailing weather events and the damages they caused between 1950 and 2011. Most data entry was poorly regulated, especially during the database's early years, so text mining was required in order to classify weather events in more generalizable categories. From this database, it appears that floods were by far the main cause of monetary losses in the studied period; it is likely that Hurricane Katrina and, to a lesser extent, Sandy were the main drivers of this result. Injuries and loss of life occurred significantly more often as consequences of tornadoes. Other wind events, extreme temperatures and floods were also associated with significant loss of life.
 
 
-
-
-## Introduction
-
-We analyze this, that and something else...
 
 ## Data Processing
 
@@ -180,9 +174,6 @@ inv_crop_exp <- filter(temp_data, CROPDMG != 0, crop_mult == -999999) %>%
   select(CROPDMG, CROPDMGEXP, crop_mult, BGN_DATE) %>%
   as.data.frame() %>%
   nrow()
-
-# Clean up
-# rm(temp_data)
 ```
 
 ### Injuries and fatalities
@@ -190,11 +181,8 @@ inv_crop_exp <- filter(temp_data, CROPDMG != 0, crop_mult == -999999) %>%
 These data do not seem to be needing any significant adjustments:
 
 ```{r inj-fat-describe}
-
 skimr::skim(mdata$INJURIES)
-cat("\n\n\n")
 skimr::skim(mdata$FATALITIES)
-
 ```
 
 ### Selection of variables of interest
@@ -249,7 +237,6 @@ sel_data2 <- sel_data[, .(
   ][
     order(-counter)
   ]
-
 ```
 
 ```{r ev-selection-comparison}
@@ -310,7 +297,7 @@ We create a list of possible synonims for weather events. In the inner loop, the
 
 Once complete, the list _could_ be used as a named vector. However, for some reason we had to insert each element manually using list$element syntax.
 
-```{r factor-loops}
+```{r factor-loops, message=FALSE, warning=FALSE}
 suppressWarnings(
     # For every new event category
     for (i in seq(1:length(new_fcts))) {
@@ -371,18 +358,16 @@ sel_data2$event2 <- fct_collapse(
   ) %>%
   # Reorder according to frequency, desc
   fct_infreq()
-
 ```
 
 The choice of the fourteen categories was arbitrary, based on observation of event types appearing in the selected data. There are limitations to this approach, namely: events belonging to more than one category; and possible oversight of extremely rare events.
 
-```{r memory-release-cleanup}
+```{r memory-release-cleanup, include=FALSE}
 
 # Clean up large dataframes, no longer used
 erase_us <- c("data", "fdata", "gdata", "mdata", "rdata")
 rm(list = erase_us)
 ```
-
 
 ``` {r final-data-computations}
 
@@ -414,6 +399,8 @@ fig.3.caption = "**Fig. 3:** Total fatalities by weather event category."
 
 Data on agricultural (crop) and property damages show unequivocal predominance of flooding phenomena as causes. At `r scales::dollar(dmgdata$total_dmg[1])`, overflowing of oceans, lakes and rivers caused about 4 times as much damage as storms and other rain phenomena, a distant second in ranking. One can easily imagine damages from disasters such as hurricanes Katrina and Sandy are the primary drivers of this result. In fact, this category was so much higher that we chose to clip the plot in order to keep data from other categories readable—a logarithmic y-axis scale would also have been appropriate, but it would have been more difficult to interpret at first sight.
 
+
+
 ```{r damage-plot, fig.cap=fig.1.caption}
 
 ### Damage plot
@@ -442,6 +429,8 @@ dmgdata %>%
   theme_classic() +
   theme(axis.text.x = element_text(angle = 70, hjust = 1))
 ```
+
+
 
 Data about injuries and fatalities is significantly different. The main culprits here seem to be tornadoes, which are presumably associated with danger from flying object. Other types of wind events are between 2^nd^ and 4^th^ ranks. Extremely hot weather seems to have been an important cause of death (2^nd^ rank, with 50% as many victims as tornadoes).
 

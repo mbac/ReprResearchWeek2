@@ -1,0 +1,10 @@
+name: Publish Document
+title:
+username:
+account: rpubs
+server: rpubs.com
+hostUrl: rpubs.com
+appId: https://api.rpubs.com/api/v1/document/746642/ba1384dedbcf46dbbf4c7c2a8b3902e7
+bundleId: https://api.rpubs.com/api/v1/document/746642/ba1384dedbcf46dbbf4c7c2a8b3902e7
+url: http://rpubs.com/mbaciarello/746642
+when: 1616966619.95627
