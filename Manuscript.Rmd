@@ -1,9 +1,11 @@
 ---
-title: "Storm Data Analysis - Week 4"
+title: "Weather-Related Damages to Life and Property in the United States: a Retrospective Analysis from National Weather Service Data Between 1950 and 2011"
 author: "Marco Baciarello"
-date: "3/17/2021"
-output: html_document
-  fig_caption: yes
+date: "3/28/2021"
+output:
+  html_document:
+    fig_captions: TRUE
+
 ---
 
 ```{r setup, include=FALSE}
@@ -15,53 +17,12 @@ suppressMessages(library(data.table))
 # library(skimr)
 ```
 
-```{r function-definitions}
+## Synopsis
 
-# WARNING: operates by reference, modifies argument data.table Adds columns for
-# ranks based on event count, damage and injuries/fatalities. Useful to quickly
-# re-rank tables with different elements or filters based on year.
-rank_DT <- function(DT) {
-    DT[, .(
-            counter = .N, # Count elements in group
-            # Total monetary damages per group
-            total_dmg = sum(tot_dmg, na.rm = TRUE),
-            # Total fatalities
-            fatalities = sum(FATALITIES, na.rm = TRUE),
-            # Injuries
-            injuries = sum(INJURIES, na.rm = TRUE)
-            ),
-        # Grouping by event type
-        by = event][
-            ,
-            # Compute a "percent rank": rank events by number of
-            # occurrences (desc), then assign a percentile by
-            # dividing rank by denominator (i.e. nrows)
-            # Note double dot syntax to access calling scope
-            `:=`(perc_rank = frankv(counter)/..denominator,
-                 # Same for monetary damage
-                 dmg_rank = frankv(total_dmg)/..denominator,
-                 # And life damage
-                 inj_rank = frankv(injuries)/..denominator,
-                 fat_rank = frankv(fatalities)/..denominator
-                 )
-            ][
-                # Filter for frequency rank >=90th
-                perc_rank >= 0.9
-            ][
-                order(-counter)
-            ]
-}
+In this data analysis we studied data from the National Weather Service, detailing weather events and the damages they caused between 1950 and 2011. Most data entry was poorly regulated, especially during the database's early years, so text mining was required in order to classify weather events in more generalizable categories. From this database, it appears that floods were by far the main cause of monetary losses in the studied period; it is likely that Hurricane Katrina and, to a lesser extent, Sandy were the main drivers of this result. Injuries and loss of life occurred significantly more often as consequences of tornadoes. Other wind events, extreme temperatures and floods were also associated with significant loss of life.
 
-# Min-max normalization
-normalizer <- function(x) {
-    return ((x - min(x)) / (max(x) - min(x)))
-  }
 
-```
 
-## Abstract
-
-Blah blah
 
 ## Introduction
 
@@ -70,6 +31,7 @@ We analyze this, that and something else...
 ## Data Processing
 
 First, we download the data file and load it into an R object. We're using a `tidyr`-centric approach, leveraging on the full suite of library found in package `tidyverse`.
+
 
 ```{r data-prep, message=FALSE, warning=FALSE, cache = TRUE}
 
@@ -421,15 +383,8 @@ erase_us <- c("data", "fdata", "gdata", "mdata", "rdata")
 rm(list = erase_us)
 ```
 
-```{r figure-captions}
-fig.1.caption = "**Fig. 1:** Figure 1"
-```
 
-## Results
-
-Data on agricultural (crop) and property damages show unequivocal predominance of flooding phenomena as causes. At `r scales::dollar(dmgdata$total_dmg[1])`, overflowing of oceans, lakes and rivers caused about 4 times as much damage as storms and other rain phenomena, a distant second in ranking. One can easily imagine damages from disasters such as hurricanes Katrina and Sandy are the primary drivers of this result.
-
-```{r damage-plot, fig.cap=fig.1.caption}
+``` {r final-data-computations}
 
 # Make a copy of data to be sorted by damage total, descending, for use in
 # damage-related plots.
@@ -442,6 +397,24 @@ dmgdata <- sel_data2 %>%
     mutate(event2 = as.character(event2)) %>%
     arrange(desc(total_dmg)) %>%
     as_tibble()
+
+```
+
+
+```{r figure-captions, include=FALSE}
+fig.1.caption = "**Fig. 1:** Total damages (from lost crops and property) by weather event category. For readability, the first column has been clipped instead of being changed to a logarithmic scale."
+
+fig.2.caption = "**Fig. 2:** Total injuries by weather event category."
+
+fig.3.caption = "**Fig. 3:** Total fatalities by weather event category."
+```
+
+
+## Results
+
+Data on agricultural (crop) and property damages show unequivocal predominance of flooding phenomena as causes. At `r scales::dollar(dmgdata$total_dmg[1])`, overflowing of oceans, lakes and rivers caused about 4 times as much damage as storms and other rain phenomena, a distant second in ranking. One can easily imagine damages from disasters such as hurricanes Katrina and Sandy are the primary drivers of this result. In fact, this category was so much higher that we chose to clip the plot in order to keep data from other categories readable—a logarithmic y-axis scale would also have been appropriate, but it would have been more difficult to interpret at first sight.
+
+```{r damage-plot, fig.cap=fig.1.caption}
 
 ### Damage plot
 
@@ -456,7 +429,7 @@ dmgdata %>%
                                   largest_with_cents = 1),
     name = "Total estimated damages caused\n(in billions of dollars)\n"
   ) + 
-  scale_x_discrete("\nWeather event category (1950–2013)") +
+  scale_x_discrete("\nWeather event category (1950–2011)") +
   coord_cartesian(ylim = c(0, 5e10)) +
   annotate("segment", x= 2.2, xend = 1.5, y = 50e9, yend = 52e9,
            arrow = arrow(angle = 20,
@@ -468,13 +441,11 @@ dmgdata %>%
            label = "Plot clipped for readability.\nActual value: $147 billion") +
   theme_classic() +
   theme(axis.text.x = element_text(angle = 70, hjust = 1))
-#####
-
 ```
 
+Data about injuries and fatalities is significantly different. The main culprits here seem to be tornadoes, which are presumably associated with danger from flying object. Other types of wind events are between 2^nd^ and 4^th^ ranks. Extremely hot weather seems to have been an important cause of death (2^nd^ rank, with 50% as many victims as tornadoes).
 
-
-```{r injuries-plot}
+```{r injuries-plot, fig.cap=fig.2.caption}
 ### Injuries plot
 
 dmgdata %>%
@@ -482,7 +453,7 @@ dmgdata %>%
         x = reorder(event2, -total_inj),
         y = total_inj)) +
     geom_col() +
-    scale_x_discrete("\nWeather event category (1950–2013)") +
+    scale_x_discrete("\nWeather event category (1950–2011)") +
     scale_y_continuous(name = "Related injuries reported\n",
                        breaks = seq(0, 1e5, 1e4),
                        labels = scales::label_comma()) +
@@ -491,7 +462,7 @@ dmgdata %>%
 
 ```
 
-```{r fatalities-plot}
+```{r fatalities-plot, fig.cap=fig.3.caption}
 ### Fatalities plot
 
 dmgdata %>%
@@ -499,7 +470,7 @@ dmgdata %>%
         x = reorder(event2, -total_fat),
         y = total_fat)) +
     geom_col() +
-    scale_x_discrete("\nWeather event category (1950–2013)") +
+    scale_x_discrete("\nWeather event category (1950–2011)") +
     scale_y_continuous(name = "Related fatalities reported\n",
                        #breaks = scales::extended_breaks(),
                        breaks = seq(0, 5e3, 1e3),
@@ -509,3 +480,5 @@ dmgdata %>%
 ```
 
 ## Conclusions
+
+Massive flooding has historically been associated with the greatest crop and property damages, with rain/storms a very distant second. Tornadoes are the most dangerous type of events in terms of human life.
